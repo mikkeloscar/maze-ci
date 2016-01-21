@@ -20,13 +20,13 @@ func (s StdoutNotifier) Done(buildId uint32) {
 }
 
 func (s StdoutNotifier) PkgDone(buildId uint32, pkg *sourcer.SrcPkg) {
-	fmt.Printf("Build: %d - Pkg build done for: %s", buildId, pkg.PKGBUILD.Pkgbase)
+	fmt.Printf("Build: %d - Pkg build done for: %s\n", buildId, pkg.PKGBUILD.Pkgbase)
 }
 
 func (s StdoutNotifier) Failed(buildId uint32, err error) {
-	fmt.Printf("Build: %d - Error: %s", buildId, err.Error())
+	fmt.Printf("Build: %d - Error: %s\n", buildId, err.Error())
 }
 
 func (s StdoutNotifier) BuildOutput(buildId uint32, pkg *sourcer.SrcPkg, output string) {
-	fmt.Printf("Build: %d - %s: %s", buildId, pkg.PKGBUILD.Pkgbase, output)
+	fmt.Printf("Build: %d - %s: %s\n", buildId, pkg.PKGBUILD.Pkgbase, output)
 }

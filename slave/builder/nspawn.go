@@ -71,9 +71,6 @@ func (n *NSpawn) update(repo repository.Repo) error {
 
 	dir, file := path.Split(n.currentPacmanConf)
 
-	fmt.Println(dir)
-	fmt.Println(n.currentPacmanConf)
-
 	// replace default pacman.conf
 	err = n.run(fmt.Sprintf("sudo cp %s/%s /etc/pacman.conf", n.buildPath, file), dir, false)
 	if err != nil {
@@ -189,7 +186,7 @@ func (n *NSpawn) updatePkgSrcs(pkgs []*sourcer.SrcPkg) error {
 }
 
 func (n *NSpawn) updatePkgSrc(pkg *sourcer.SrcPkg) (*sourcer.SrcPkg, error) {
-	err := n.run(fmt.Sprintf("cd %s && makepkg -os && mksrcinfo", n.buildPath), pkg.Path, false)
+	err := n.run(fmt.Sprintf("cd %s && makepkg -os --noconfirm && mksrcinfo", n.buildPath), pkg.Path, false)
 	if err != nil {
 		return nil, err
 	}
@@ -317,32 +314,30 @@ func (n *NSpawn) run(command string, workdir string, output bool) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		// for {
-		// 	select {
-		// 	case <-n.channels.stop:
-		// 		err := cmd.Process.Kill()
-		// 		// send result of killing process
-		// 		n.channels.killResp <- err
-		// 		return
-		// 	default:
-		// if output {
-		if scanner.Scan() {
-			output := scanner.Text()
-			fmt.Printf("container: %s\n", output)
-			// n.notifier.BuildOutput(n.id, n.pkg, output)
-		} else {
-			fmt.Println("DONE")
-			// no more output
-			return
+		for {
+			// 	select {
+			// 	case <-n.channels.stop:
+			// 		err := cmd.Process.Kill()
+			// 		// send result of killing process
+			// 		n.channels.killResp <- err
+			// 		return
+			// 	default:
+			// if output {
+			if scanner.Scan() {
+				stdout := scanner.Text()
+				if output {
+					n.notifier.BuildOutput(n.id, n.pkg, stdout)
+				} else {
+					fmt.Printf("container: %s\n", stdout)
+				}
+			} else {
+				// no more output
+				return
+			}
 		}
 		// }
 		// }
-		// }
 	}()
-
-	if output {
-		fmt.Printf("output: %d", output)
-	}
 
 	// if err != nil {
 	// 	if exitErr, ok := err.(*exec.ExitError); ok {
