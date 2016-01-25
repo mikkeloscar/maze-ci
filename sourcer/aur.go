@@ -15,7 +15,7 @@ const AURCloneURL = "https://aur.archlinux.org/%s.git"
 // AUR defines a sourcer for Arch User Repository
 type AUR struct {
 	// Workspace
-	Workspace *workspace.Workspace
+	ws *workspace.Workspace
 	// Pkgs      []string
 }
 
@@ -56,7 +56,10 @@ type AUR struct {
 // }
 
 // Get PKGBUILDs from AUR
-func (a AUR) Get(pkg string, repo repository.Repo) ([]*SrcPkg, error) {
+func (a AUR) Get(pkg string, repo repository.Repo, ws *workspace.Workspace) ([]*SrcPkg, error) {
+	// set current workspace
+	a.ws = ws
+
 	updates := make(map[string]struct{})
 	err := a.getUpdates([]string{pkg}, repo, updates)
 	if err != nil {
@@ -75,7 +78,7 @@ func (a AUR) Get(pkg string, repo repository.Repo) ([]*SrcPkg, error) {
 
 	// get a list of PKGBUILDs/SrcPkgs
 	for u, _ := range updates {
-		filePath = path.Join(a.Workspace.SrcDir, u, ".SRCINFO")
+		filePath = path.Join(a.ws.SrcDir, u, ".SRCINFO")
 
 		pkgb, err := pkgbuild.ParseSRCINFO(filePath)
 		if err != nil {
@@ -84,7 +87,7 @@ func (a AUR) Get(pkg string, repo repository.Repo) ([]*SrcPkg, error) {
 		}
 		srcPkg = &SrcPkg{
 			PKGBUILD: pkgb,
-			Path:     path.Join(a.Workspace.SrcDir, u),
+			Path:     path.Join(a.ws.SrcDir, u),
 		}
 		srcPkgs = append(srcPkgs, srcPkg)
 	}
@@ -99,7 +102,7 @@ func (a AUR) GetSource(pkg string) (*SrcPkg, error) {
 		return nil, err
 	}
 
-	filePath := path.Join(a.Workspace.SrcDir, pkg, ".SRCINFO")
+	filePath := path.Join(a.ws.SrcDir, pkg, ".SRCINFO")
 
 	pkgb, err := pkgbuild.ParseSRCINFO(filePath)
 	if err != nil {
@@ -107,7 +110,7 @@ func (a AUR) GetSource(pkg string) (*SrcPkg, error) {
 	}
 	srcPkg := &SrcPkg{
 		PKGBUILD: pkgb,
-		Path:     path.Join(a.Workspace.SrcDir, pkg),
+		Path:     path.Join(a.ws.SrcDir, pkg),
 	}
 
 	return srcPkg, nil
@@ -224,7 +227,7 @@ func (a *AUR) updatePkgSrc(pkg string) error {
 	url := fmt.Sprintf(AURCloneURL, pkg)
 
 	// TODO implement version that can pull instead of clone
-	err := gitClone(url, a.Workspace.SrcDir)
+	err := gitClone(url, a.ws.SrcDir)
 	if err != nil {
 		return err
 	}
@@ -237,6 +240,6 @@ func (a *AUR) updateRepo(pkg string, c chan<- error) {
 	url := fmt.Sprintf(AURCloneURL, pkg)
 
 	// TODO implement version that can pull instead of clone
-	err := gitClone(url, path.Join(a.Workspace.SrcDir, pkg))
+	err := gitClone(url, path.Join(a.ws.SrcDir, pkg))
 	c <- err
 }

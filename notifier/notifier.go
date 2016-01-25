@@ -11,6 +11,7 @@ type Notifier interface {
 	PkgDone(buildId uint32, pkg *sourcer.SrcPkg)
 	Failed(buildId uint32, err error)
 	BuildOutput(buildId uint32, pkg *sourcer.SrcPkg, output string)
+	AddPkgFailed(buildId uint32, pkg string, err error)
 }
 
 type StdoutNotifier struct{}
@@ -29,4 +30,8 @@ func (s StdoutNotifier) Failed(buildId uint32, err error) {
 
 func (s StdoutNotifier) BuildOutput(buildId uint32, pkg *sourcer.SrcPkg, output string) {
 	fmt.Printf("Build: %d - %s: %s\n", buildId, pkg.PKGBUILD.Pkgbase, output)
+}
+
+func (s StdoutNotifier) AddPkgFailed(buildId uint32, pkg string, err error) {
+	fmt.Printf("Build: %d - Upload of %s failed: %s\n", buildId, pkg, err.Error())
 }

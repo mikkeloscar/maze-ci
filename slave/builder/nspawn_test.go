@@ -1,7 +1,8 @@
 package builder
 
 import (
-	"fmt"
+	"os"
+	"path"
 	"testing"
 
 	"github.com/mikkeloscar/gopkgbuild"
@@ -18,57 +19,28 @@ const (
 	workdir            = "/home/vagrant/maze_workdir"
 	pacmanConfTemplate = "../../contrib/pacman.conf"
 	pacmanConfPath     = "/home/vagrant/pacman_conf"
+	dbPath             = "/home/vagrant/maze_repo/test.db.tar.gz"
+	mirror             = "https://ftp.myrveln.se/pub/linux/archlinux/$repo/os/$arch"
 )
 
-// func TestBuildPkgs(t *testing.T) {
-// 	builder := NSpawn{
-// 		arch:      pkgbuild.X8664,
-// 		template:  templateContainer,
-// 		path:      containerPath,
-// 		buildPath: "/mnt/build",
-// 		workspace: &workspace.Workspace{
-// 			SrcDir: workdir,
-// 		},
-// 		user: "maze",
-// 	}
-
-// 	pkgs := []*pkg.SrcPkg{
-// 		&pkg.SrcPkg{
-// 			Path: workdir + "/" + "libtermkey-bzr",
-// 		},
-// 		&pkg.SrcPkg{
-// 			Path: workdir + "/" + "libvterm-bzr",
-// 		},
-// 		&pkg.SrcPkg{
-// 			Path: workdir + "/" + "neovim-git",
-// 		},
-// 	}
-
-// 	packages, err := builder.Build(pkgs)
-// 	if err != nil {
-// 		fmt.Println(err.Error())
-// 	}
-// 	assert.NoError(t, err, "should not fail")
-
-// 	fmt.Println(packages)
-// }
-
 func TestBuildPkgs(t *testing.T) {
+	// setup
+	err := os.MkdirAll(workdir, 0755)
+	assert.NoError(t, err, "should not fail")
+	err = os.MkdirAll(path.Dir(dbPath), 0755)
+	assert.NoError(t, err, "should not fail")
+
 	repo := repository.LocalRepo{
 		RepoName: "TestRepo",
-		Db:       "none",
+		Db:       dbPath,
 		Deps:     nil,
 	}
 
 	repoPkg := &sourcer.RepoPkg{
 		Repo: &repo,
 		Pkg: sourcer.BuildPkg{
-			Name: "neovim-git",
-			Sourcer: sourcer.AUR{
-				Workspace: &workspace.Workspace{
-					SrcDir: workdir,
-				},
-			},
+			Name:    "neovim-git",
+			Sourcer: sourcer.AUR{},
 		},
 	}
 
@@ -80,15 +52,20 @@ func TestBuildPkgs(t *testing.T) {
 		buildPath:          "/mnt/build",
 		pacmanConfTemplate: pacmanConfTemplate,
 		currentPacmanConf:  pacmanConfPath,
-		// workspace: &workspace.Workspace{
-		// 	SrcDir: workdir,
-		// },
+		workspace: &workspace.Workspace{
+			SrcDir: workdir,
+		},
 		user:     "maze",
+		mirror:   mirror,
 		notifier: notifier.StdoutNotifier(struct{}{}),
 	}
 
-	packages, err := builder.syncBuild(repoPkg)
+	err = builder.Build(repoPkg)
 	assert.NoError(t, err, "should not fail")
 
-	fmt.Println(packages)
+	// cleanup
+	err = os.RemoveAll(workdir)
+	assert.NoError(t, err, "should not fail")
+	err = os.RemoveAll(path.Dir(dbPath))
+	assert.NoError(t, err, "should not fail")
 }

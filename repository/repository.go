@@ -8,7 +8,7 @@ type Repo interface {
 	// repo.
 	IsNew(pkg string, version pkgbuild.CompleteVersion) (bool, bool, error)
 	// Add package to repo.
-	Add(path string) error
+	Add(path string, buildId uint32) error
 	// Remove package from repo.
 	Remove(pkg string) error
 	// Get repo Name.

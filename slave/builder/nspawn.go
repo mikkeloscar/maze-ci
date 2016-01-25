@@ -2,6 +2,7 @@ package builder
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -9,12 +10,14 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"syscall"
 
 	"github.com/kr/pty"
 	"github.com/mikkeloscar/gopkgbuild"
 	"github.com/mikkeloscar/maze-ci/notifier"
 	"github.com/mikkeloscar/maze-ci/repository"
 	"github.com/mikkeloscar/maze-ci/sourcer"
+	"github.com/mikkeloscar/maze-ci/workspace"
 )
 
 // NSpawn is a systemd-nspawn based builder.
@@ -36,13 +39,17 @@ type NSpawn struct {
 	// build user.
 	user string
 
+	mirror string
+
+	workspace *workspace.Workspace
+
 	// current pkg being build.
 	pkg *sourcer.SrcPkg
 
 	notifier notifier.Notifier
 
 	channels struct {
-		stop     chan struct{}
+		cancel   chan struct{}
 		killResp chan error
 	}
 }
@@ -62,6 +69,29 @@ func (n *NSpawn) SetNotifier(notifier notifier.Notifier) {
 	n.notifier = notifier
 }
 
+func escapeDollar(str string) string {
+	var buf bytes.Buffer
+	for _, c := range str {
+		if c == '$' {
+			buf.WriteByte('\\')
+		}
+		buf.WriteRune(c)
+	}
+
+	return buf.String()
+}
+
+func (n *NSpawn) setMirror() error {
+	mirror := fmt.Sprintf("Server = %s", escapeDollar(n.mirror))
+
+	err := n.run(fmt.Sprintf("sudo sh -c 'echo %s >> /etc/pacman.d/mirrorlist'", mirror), "", false)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // update nspawn container.
 func (n *NSpawn) update(repo repository.Repo) error {
 	err := n.setupPacmanConf(repo)
@@ -73,6 +103,12 @@ func (n *NSpawn) update(repo repository.Repo) error {
 
 	// replace default pacman.conf
 	err = n.run(fmt.Sprintf("sudo cp %s/%s /etc/pacman.conf", n.buildPath, file), dir, false)
+	if err != nil {
+		return err
+	}
+
+	// Add mirror
+	err = n.setMirror()
 	if err != nil {
 		return err
 	}
@@ -91,6 +127,12 @@ func (n *NSpawn) takedown() error {
 
 	// remove temp pacman.conf
 	err := os.Remove(n.currentPacmanConf)
+	if err != nil {
+		return err
+	}
+
+	// clear workspace
+	err = n.workspace.CleanSrc()
 	if err != nil {
 		return err
 	}
@@ -136,7 +178,7 @@ func (n *NSpawn) setupPacmanConf(repo repository.Repo) error {
 }
 
 func (n *NSpawn) Stop() error {
-	n.channels.stop <- struct{}{}
+	n.channels.cancel <- struct{}{}
 
 	// TODO timeout
 	err := <-n.channels.killResp
@@ -146,7 +188,7 @@ func (n *NSpawn) Stop() error {
 
 // Get a sorted list of packages to build.
 func (n *NSpawn) getBuildPkgs(pkg *sourcer.RepoPkg) ([]*sourcer.SrcPkg, error) {
-	pkgSrcs, err := pkg.Pkg.Sourcer.Get(pkg.Pkg.Name, pkg.Repo)
+	pkgSrcs, err := pkg.Pkg.Sourcer.Get(pkg.Pkg.Name, pkg.Repo, n.workspace)
 	if err != nil {
 		return nil, err
 	}
@@ -210,39 +252,40 @@ func (n *NSpawn) syncBuild(pkg *sourcer.RepoPkg) ([]string, error) {
 	if err != nil {
 		// TODO mark as internal failure and log to local builder logs
 		return nil, err
-		// n.notifier.Failed(n.id, err)
-		// goto takedown
 	}
 
 	pkgs, err := n.buildPkgs(pkg)
 	if err != nil {
-		return nil, err
-		// n.notifier.Failed(n.id, err)
-		// goto takedown
-	}
-
-	err = n.takedown()
-	if err != nil {
-		// TODO log error in takedown
 		return nil, err
 	}
 
 	return pkgs, nil
 }
 
-func (n *NSpawn) Build(pkg *sourcer.RepoPkg) {
-	_, err := n.syncBuild(pkg)
+func (n *NSpawn) Build(pkg *sourcer.RepoPkg) error {
+	pkgs, err := n.syncBuild(pkg)
 	if err != nil {
 		// TODO: better handling of internal vs build error
 		n.notifier.Failed(n.id, err)
-		return
+	} else {
+		// Add packages to repo
+		for _, p := range pkgs {
+			err := pkg.Repo.Add(p, n.id)
+			if err != nil {
+				n.notifier.AddPkgFailed(n.id, path.Base(p), err)
+				break
+			}
+		}
 	}
 
-	// TODO: Upload packages
-	// err = n.repo.Upload(n.id, buildPkgs)
-	// if err != nil {
-	// 	n.notifier.UploadFailed(n.id, err)
-	// }
+	err = n.takedown()
+	if err != nil {
+		// TODO log error in takedown
+		fmt.Println("ERROR IN TAKEDOWN")
+		return err
+	}
+
+	return nil
 }
 
 func (n *NSpawn) buildPkgs(pkg *sourcer.RepoPkg) ([]string, error) {
@@ -296,6 +339,10 @@ func (n *NSpawn) build(pkg *sourcer.SrcPkg) ([]string, error) {
 // buildPath.
 // TODO handle stdout optional
 func (n *NSpawn) run(command string, workdir string, output bool) error {
+	if workdir == "" {
+		workdir = n.workspace.SrcDir
+	}
+
 	cmd := exec.Command("sudo", "systemd-nspawn",
 		"--quiet",
 		fmt.Sprintf("--template=%s", n.template),
@@ -339,17 +386,13 @@ func (n *NSpawn) run(command string, workdir string, output bool) error {
 		// }
 	}()
 
-	// if err != nil {
-	// 	if exitErr, ok := err.(*exec.ExitError); ok {
-	// 		if _, ok := exitErr.Sys().(syscall.WaitStatus); ok {
-	// 			return err
-	// 		}
-	// 	}
-	// 	return err
-	// }
-
 	err = cmd.Wait()
 	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if _, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+				return err
+			}
+		}
 		return err
 	}
 

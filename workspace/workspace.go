@@ -63,7 +63,7 @@ func (w *Workspace) clean(dir string) error {
 	}
 
 	for _, f := range files {
-		err = os.Remove(path.Join(dir, f.Name()))
+		err = os.RemoveAll(path.Join(dir, f.Name()))
 		if err != nil {
 			return err
 		}

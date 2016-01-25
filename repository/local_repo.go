@@ -3,6 +3,7 @@ package repository
 import (
 	"archive/tar"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -23,7 +24,7 @@ type LocalRepo struct {
 
 // Url gets repo url/path to db file.
 func (l *LocalRepo) Url() string {
-	return l.Db
+	return fmt.Sprintf("file://%s", l.Db)
 }
 
 // Name gets name of repo.
@@ -38,7 +39,7 @@ func (l *LocalRepo) Dependencies() []Repo {
 
 // Add adds package to repo.
 // TODO: this is a very simple version, should be better.
-func (l *LocalRepo) Add(pkgPath string) error {
+func (l *LocalRepo) Add(pkgPath string, buildId uint32) error {
 	repoPath, _ := path.Split(l.Db)
 	pkgBasePath, pkg := path.Split(pkgPath)
 

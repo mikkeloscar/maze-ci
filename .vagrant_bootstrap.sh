@@ -36,6 +36,7 @@ systemd-nspawn -D $nspawn_container useradd -m -s /bin/bash $container_user
 /bin/bash -c "echo \"$container_user ALL=(ALL) NOPASSWD: ALL\" >> $nspawn_container/etc/sudoers.d/$container_user"
 
 
+# Setup GOPATH
 echo "" >> /home/vagrant/.bashrc
 echo "export GOPATH=\$HOME/go" >> /home/vagrant/.bashrc
 echo "cd go/src/github.com/mikkeloscar/maze-ci" >> /home/vagrant/.bashrc
